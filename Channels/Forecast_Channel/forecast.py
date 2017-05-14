@@ -26,6 +26,7 @@ import io
 import random
 import rsa
 import xmltodict
+import threading
 from config import *
 from datetime import datetime, timedelta
 
@@ -171,14 +172,19 @@ def progress(percent,list):
 		else: display = "✓"
 		progcount = 0
 	else: display = prog[progcount]
-	sys.stdout.write("\rProgress: %s%% [%s] (%s/%s) [%s] ..." % (int(round(percent)),("="*fill)+(" "*(bar-fill)),citycount,len(list)-cached,display))
+	sys.stdout.write("\r%s\rProgress: %s%% [%s] (%s/%s) [%s] [%s] %s" % (" "*(bar+38),int(round(percent)),("="*fill)+(" "*(bar-fill)),citycount,len(list)-cached,display,concurrent,"."*progcount))
 	sys.stdout.flush()
 	progcount+=1
 	if progcount == 4: progcount = 0
 
 def output(text):
-	sys.stdout.write("\r%s\r%s\n\n" % ((" "*69),text))
+	sys.stdout.write("\r%s\r%s\n\n" % ((" "*73),text))
 	sys.stdout.flush()
+	
+def display_loop(list):
+	while loop == True:
+		progress(float(citycount)/float(len(list)-cached)*100,list)
+		time.sleep(0.1)
 
 def get_icon(icon,list,key):
 	if get_index(list,key,2) is 'Japan': return get_weatherjpnicon(icon)
@@ -645,42 +651,31 @@ def make_forecast_bin(list):
 	file3 = 'forecast.%s.%s_%s' % (extension, str(country_code).zfill(3), str(language_code))
 	file4 = 'forecast.%s' % extension
 	with open(file1, 'ab') as file:
+		print "Writing Binary Data ..."
 		file.write(pad(20))
 		for k, v in header.items(): file.write(v)
 		increment()
-		print "Writing Long Forecast Table ..."
 		for k, v in long_forecast_table.items(): file.write(v)
 		count[9] = file.tell()
 		if japcount > 0:
-			print "Writing Short Forecast Table ..."
 			for k, v in short_japan_tables.items(): file.write(v)
 		increment()
-		print "Writing Weather Value Offset Table ..."
 		for k, v in weathervalue_offset_table.items(): file.write(v)
 		increment()
-		print "Writing UV Index Table ..."
 		for k, v in uvindex_table.items(): file.write(v)
 		increment()
-		print "Writing Laundry Index Table ..."
 		for k, v in laundryindex_table.items(): file.write(v)
 		increment()
-		print "Writing Pollen Index Table ..."
 		for k, v in pollenindex_table.items(): file.write(v)
 		increment()
-		print "Writing Location Table ..."
 		for k, v in location_table.items(): file.write(v)
 		increment()
-		print "Writing Weather Value Text Table ..."
 		for k, v in weathervalue_text_table.items(): file.write(v)
 		increment()
-		print "Writing UV Index Text Table ..."
 		for k, v in uvindex_text_table.items(): file.write(v)
-		print "Writing Laundry Index Text Table ..."
 		for k, v in laundry_text_table.items(): file.write(v)
-		print "Writing Pollen Index Text Table ..."
 		for k, v in pollen_text_table.items(): file.write(v)
 		increment()
-		print "Writing Location Text Table ..."
 		for k, v in text_table.items(): file.write(v)
 		file.write(pad(16))
 		file.write('RIICONNECT24'.encode('ASCII')) # This can be used to identify that we made this file.
@@ -731,7 +726,6 @@ def make_forecast_bin(list):
 	for i in [8,10,6,12]:
 		offset_write(8,i,0)
 	"""Location Text"""
-	print "Writing Location Text Offsets ..."
 	seek_offset = count[5]
 	file.seek(seek_offset)
 	for keys in list.keys():
@@ -751,7 +745,6 @@ def make_forecast_bin(list):
 	os.system('dd if="' + file1 + '" of="' + file2 + '" bs=1 skip=12') # This cuts off the first 12 bytes.
 	if production: sign_file(file2, file3, file4)
 	os.remove(file1)
-	print 'File Generation Successful'
 
 def make_short_bin(list):
 	print "Building Binary Tables ..."
@@ -768,7 +761,6 @@ def make_short_bin(list):
 		file.flush()
 	file.close()
 	if production: sign_file(file1, file2, file3)
-	print 'File Generation Successful'
 
 def sign_file(name, local_name, server_name):
 	print "[-] Processing " + local_name + " ..."
@@ -807,10 +799,12 @@ def sign_file(name, local_name, server_name):
 	os.remove(local_name + "-1")
 
 def get_data(list, name):
-	global citycount,cache,apilegacy,apirequests
+	global citycount,cache,apilegacy,apirequests,last_dl,concurrent
+	start_time = time.time()
 	citycount+=1
 	cache[name] = get_all(list, name)
 	globe[name] = {}
+	if useMultithreaded: concurrent+=1
 	if useLegacy: apirequests+=2
 	blank_data(list,name,True)
 	if get_legacy_location(list, name) is None:
@@ -821,7 +815,8 @@ def get_data(list, name):
 			get_weekly(list, name)
 			get_hourly_forecast(list, name)
 	else: output('Unable to retrieve data for %s - using blank data' % name)
-	progress(float(citycount)/float(len(list)-cached)*100,list)
+	last_dl = time.time()-start_time
+	if useMultithreaded: concurrent-=1
 
 def make_header_short(list):
 	header = collections.OrderedDict()
@@ -1563,8 +1558,13 @@ def get_wind_direction(degrees):
 requests.packages.urllib3.disable_warnings() # This is so we don't get some warning about SSL.
 if not useLegacy: test_keys()
 for list in weathercities:
-	global language_code,country_code,mode
+	global language_code,country_code,mode,last_dl,useMultithreaded,concurrent
+	threads = []
 	language_code = 1
+	delay = 0
+	last_dl = 0
+	concurrent = 0
+	useMultithreaded = False
 	country_code = forecastlists.bincountries[list.values()[0][2]]
 	print "Processing list #%s - %s (%s)" % (weathercities.index(list), country_code, list.values()[0][2])
 	for k,v in forecastlists.weathercities_international.items():
@@ -1577,7 +1577,26 @@ for list in weathercities:
 		if keys in cache and cache[keys] == get_all(list,keys): cached+=1
 	print "Downloading Forecast Data ...\n"
 	for keys in list.keys():
-		if keys not in cache or cache[keys] != get_all(list,keys): get_data(list,keys)
+		if keys not in cache or cache[keys] != get_all(list,keys):
+			if int(round(last_dl)) > 0: delay+=1
+			create = threading.Thread(target=get_data, args=(list,keys))
+			threads.append(create)
+			if not useMultithreaded:
+				get_data(list,keys)
+				threads.remove(create)
+				progress(float(citycount)/float(len(list)-cached)*100,list)
+			if delay > 1: useMultithreaded = True
+	if useMultithreaded:
+		loop = True
+		threading.Thread(target=display_loop,args=[list]).start()
+		for i in threads:
+			while concurrent >= 5: time.sleep(0.01)
+			start_time = time.time()
+			i.start()
+		while concurrent > 0: time.sleep(0.01)
+		for i in threads:
+			i.join()
+		loop = False
 	print "\n\n[*] Skipped %s cached cities" % cached
 	cities+=citycount
 	total+=len(list)
