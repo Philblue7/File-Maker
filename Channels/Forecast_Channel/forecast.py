@@ -145,9 +145,7 @@ def get_number(list, key):
 	return list.keys().index(key)
 
 def pad(amnt):
-	buffer = ""
-	for _ in range(amnt): buffer+="\0"
-	return buffer
+	return "\0"*amnt
 
 def get_index(list, key, num):
 	if num != 0: return list[key][num]
@@ -274,9 +272,7 @@ def request_data(url):
 	c = 0
 	while c == 0:
 		if i == 4: return -1
-		if i > 0:
-			time.sleep(0.3)
-			retrycount+=1
+		if i > 0: retrycount+=1
 		data = requests.get(url, headers=header)
 		status_code = data.status_code
 		if "regions" in url and status_code != 200: return None
@@ -742,8 +738,9 @@ def make_forecast_bin(list):
 		hex_write(0,country1,4,12)
 		file.seek(seek_offset)
 	file.close()
-	os.system('dd if="' + file1 + '" of="' + file2 + '" bs=1 skip=12') # This cuts off the first 12 bytes.
-	if production: sign_file(file2, file3, file4)
+	if production:
+		os.system('dd if="' + file1 + '" of="' + file2 + '" bs=1 skip=12') # This cuts off the first 12 bytes.
+		sign_file(file2, file3, file4)
 	os.remove(file1)
 
 def make_short_bin(list):
@@ -1586,14 +1583,13 @@ for list in weathercities:
 			if delay > 1: useMultithreaded = True
 	if useMultithreaded:
 		for i in threads:
-			while concurrent >= 3: time.sleep(0.01)
+			while concurrent >= 4: time.sleep(0.01)
 			i.start()
-		while concurrent > 0: time.sleep(0.01)
 		for i in threads:
 			i.join()
 	loop = False
-	print "\n\n"
-	if cached > 0: print "[*] Skipped %s cached cities" % cached
+	print "\n"
+	if cached > 0: print "\n[*] Skipped %s cached cities" % cached
 	cities+=citycount
 	total+=len(list)
 	for i in range(1, 3):
