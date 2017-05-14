@@ -1576,28 +1576,24 @@ for list in weathercities:
 	for keys in list.keys():
 		if keys in cache and cache[keys] == get_all(list,keys): cached+=1
 	print "Downloading Forecast Data ...\n"
+	if len(list)-cached is not 0: loop = True
+	threading.Thread(target=display_loop,args=[list]).start()
 	for keys in list.keys():
 		if keys not in cache or cache[keys] != get_all(list,keys):
 			if int(round(last_dl)) > 0: delay+=1
-			create = threading.Thread(target=get_data, args=(list,keys))
-			threads.append(create)
-			if not useMultithreaded:
-				get_data(list,keys)
-				threads.remove(create)
-				progress(float(citycount)/float(len(list)-cached)*100,list)
+			if useMultithreaded: threads.append(threading.Thread(target=get_data, args=(list,keys)))
+			else: get_data(list,keys)
 			if delay > 1: useMultithreaded = True
 	if useMultithreaded:
-		loop = True
-		threading.Thread(target=display_loop,args=[list]).start()
 		for i in threads:
-			while concurrent >= 5: time.sleep(0.01)
-			start_time = time.time()
+			while concurrent >= 3: time.sleep(0.01)
 			i.start()
 		while concurrent > 0: time.sleep(0.01)
 		for i in threads:
 			i.join()
-		loop = False
-	print "\n\n[*] Skipped %s cached cities" % cached
+	loop = False
+	print "\n\n"
+	if cached > 0: print "[*] Skipped %s cached cities" % cached
 	cities+=citycount
 	total+=len(list)
 	for i in range(1, 3):
