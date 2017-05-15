@@ -1580,10 +1580,11 @@ for list in weathercities:
 			if int(round(last_dl)) > 0: delay+=1
 			if useMultithreaded: threads.append(threading.Thread(target=get_data, args=(list,keys)))
 			else: get_data(list,keys)
-			if delay > 2: useMultithreaded = True
+			if delay > 1: useMultithreaded = True
+			else: delay = 0
 	if useMultithreaded:
 		for i in threads:
-			while concurrent >= 4: time.sleep(0.01)
+			while concurrent >= 5: time.sleep(0.01)
 			i.start()
 		for i in threads:
 			i.join()
